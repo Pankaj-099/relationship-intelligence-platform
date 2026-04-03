@@ -121,7 +121,7 @@ class ActivityLog(Base):
     action: Mapped[str] = mapped_column(String(100), nullable=False)
     entity_type: Mapped[str] = mapped_column(String(50), nullable=True)
     entity_id: Mapped[int] = mapped_column(Integer, nullable=True)
-    metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
+    log_metadata: Mapped[dict] = mapped_column(JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc)

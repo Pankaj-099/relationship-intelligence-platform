@@ -3,17 +3,20 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import create_tables
-from app.api.routes import auth
 
+# Import ALL models before create_tables so SQLAlchemy registers every table
+from app.models.user import User  # noqa: F401
+from app.models.project import Project  # noqa: F401
+from app.models.graph import Node, Edge, SchemaDefinition, GraphSnapshot, ActivityLog  # noqa: F401
+
+from app.api.routes import auth
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     print("🚀 Starting Relationship Intelligence Platform...")
     await create_tables()
     print("✅ Database tables created/verified")
     yield
-    # Shutdown
     print("👋 Shutting down...")
 
 
@@ -33,7 +36,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Routers
 app.include_router(auth.router, prefix="/api")
 
 

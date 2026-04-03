@@ -53,7 +53,7 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
     await db.flush()
 
     # Log activity
-    log = ActivityLog(user_id=user.id, action="user_registered", entity_type="user", entity_id=user.id)
+    log = ActivityLog(user_id=user.id, action="user_registered", entity_type="user", entity_id=user.id, log_metadata={})
     db.add(log)
     await db.commit()
     await db.refresh(user)
@@ -86,7 +86,7 @@ async def login(credentials: UserLogin, db: AsyncSession = Depends(get_db)):
         )
 
     # Log activity
-    log = ActivityLog(user_id=user.id, action="user_login", entity_type="user", entity_id=user.id)
+    log = ActivityLog(user_id=user.id, action="user_login", entity_type="user", entity_id=user.id, log_metadata={})
     db.add(log)
     await db.commit()
 
