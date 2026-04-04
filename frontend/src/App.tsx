@@ -3,6 +3,7 @@ import { useAuthStore } from './store/authStore'
 import { Login } from './pages/Login'
 import { Register } from './pages/Register'
 import { Dashboard } from './pages/Dashboard'
+import { ProjectView } from './pages/ProjectView'
 import { Loader } from './components/ui/Loader'
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -19,20 +20,15 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
 
 function App() {
   const { isLoading } = useAuthStore()
-
   if (isLoading) return <Loader fullScreen text="Loading..." />
 
   return (
     <Routes>
-      {/* Public routes */}
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
       <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
-
-      {/* Protected routes */}
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-
-      {/* Fallback */}
+      <Route path="/projects/:id" element={<ProtectedRoute><ProjectView /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   )
