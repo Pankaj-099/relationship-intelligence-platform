@@ -10,9 +10,10 @@ import ReactFlow, {
   BackgroundVariant,
   MarkerType,
 } from 'reactflow'
+
 import type { Node, Edge } from 'reactflow'
 import 'reactflow/dist/style.css'
-import { ArrowLeft, RefreshCw, Plus } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Plus, History } from 'lucide-react'
 import { graphApi } from '../api/graph'
 import type { GraphNode as ApiNode, GraphEdge as ApiEdge } from '../types/graph'
 import { searchApi } from '../api/search'
@@ -21,23 +22,18 @@ import { CustomNode } from '../components/graph/CustomNode'
 import { NodePanel } from '../components/graph/NodePanel'
 import { FilterPanel } from '../components/graph/FilterPanel'
 import { GraphToolbar } from '../components/graph/GraphToolbar'
+import { WSIndicator } from '../components/graph/WSIndicator'
 import { Loader } from '../components/ui/Loader'
 import { Button } from '../components/ui/Button'
+import { useWebSocket } from '../hooks/useWebSocket'
 import toast from 'react-hot-toast'
 
-// ✅ Fix: define outside component to avoid re-creation
 const RF_NODE_TYPES = { custom: CustomNode }
 
 const TYPE_COLORS: Record<string, string> = {
-  default: '#6366f1',
-  person: '#8b5cf6',
-  company: '#06b6d4',
-  skill: '#10b981',
-  product: '#f59e0b',
-  location: '#ef4444',
-  event: '#ec4899',
-  organization: '#f97316',
-  technology: '#14b8a6',
+  default: '#6366f1', person: '#8b5cf6', company: '#06b6d4',
+  skill: '#10b981', product: '#f59e0b', location: '#ef4444',
+  event: '#ec4899', organization: '#f97316', technology: '#14b8a6',
 }
 
 const getTypeColor = (type: string, nodeColor?: string | null) =>
@@ -45,21 +41,18 @@ const getTypeColor = (type: string, nodeColor?: string | null) =>
 
 const buildLayout = (apiNodes: ApiNode[], apiEdges: ApiEdge[]) => {
   const total = apiNodes.length
-  const cols = Math.ceil(Math.sqrt(total))
-  const SPACING_X = 220
-  const SPACING_Y = 200
+  const cols = Math.max(1, Math.ceil(Math.sqrt(total)))
 
   const rfNodes: Node[] = apiNodes.map((node, i) => {
     const col = i % cols
     const row = Math.floor(i / cols)
     const color = getTypeColor(node.node_type, node.color)
-
     return {
       id: String(node.id),
       type: 'custom',
       position: {
-        x: node.position_x !== 0 ? node.position_x : (col - cols / 2) * SPACING_X,
-        y: node.position_y !== 0 ? node.position_y : row * SPACING_Y,
+        x: node.position_x !== 0 ? node.position_x : (col - cols / 2) * 220,
+        y: node.position_y !== 0 ? node.position_y : row * 200,
       },
       data: {
         label: node.label,
@@ -76,7 +69,6 @@ const buildLayout = (apiNodes: ApiNode[], apiEdges: ApiEdge[]) => {
   const rfEdges: Edge[] = apiEdges.map((edge) => {
     const sourceNode = apiNodes.find((n) => n.id === edge.source_id)
     const color = getTypeColor(sourceNode?.node_type || 'default', sourceNode?.color)
-
     return {
       id: String(edge.id),
       source: String(edge.source_id),
@@ -91,7 +83,6 @@ const buildLayout = (apiNodes: ApiNode[], apiEdges: ApiEdge[]) => {
       markerEnd: edge.is_directed
         ? { type: MarkerType.ArrowClosed, color: `${color}80`, width: 16, height: 16 }
         : undefined,
-      data: { apiEdge: edge },
     }
   })
 
@@ -119,6 +110,26 @@ function GraphExplorerInner() {
   const [showGrid, setShowGrid] = useState(true)
   const [highlightedIds, setHighlightedIds] = useState<Set<number>>(new Set())
   const [hasHighlight, setHasHighlight] = useState(false)
+
+  // WebSocket
+  const { isConnected, connections } = useWebSocket({
+    projectId,
+    onNodeAdded: (data) => {
+      toast.success(`Node "${data.node?.label}" added by ${data.user?.username}`)
+      loadGraph()
+    },
+    onNodeDeleted: (data) => {
+      toast(`Node deleted by ${data.user?.username}`)
+      loadGraph()
+    },
+    onEdgeAdded: (data) => {
+      toast.success(`Edge added by ${data.user?.username}`)
+      loadGraph()
+    },
+    onUserJoined: (data) => {
+      toast(`${data.user?.username} joined`, { icon: '👋' })
+    },
+  })
 
   useEffect(() => { loadGraph() }, [projectId])
 
@@ -150,12 +161,10 @@ function GraphExplorerInner() {
 
   const getFilteredNodes = useCallback(() => {
     return apiNodes.filter((node) => {
-      const matchesSearch =
-        !searchQuery ||
+      const matchesSearch = !searchQuery ||
         node.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
         node.external_id.toLowerCase().includes(searchQuery.toLowerCase())
-      const matchesType =
-        selectedTypes.length === 0 || selectedTypes.includes(node.node_type)
+      const matchesType = selectedTypes.length === 0 || selectedTypes.includes(node.node_type)
       return matchesSearch && matchesType
     })
   }, [apiNodes, searchQuery, selectedTypes])
@@ -164,38 +173,25 @@ function GraphExplorerInner() {
     const filtered = getFilteredNodes()
     const filteredIds = new Set(filtered.map((n) => String(n.id)))
 
-    setNodes((nds) =>
-      nds.map((n) => {
-        const isVisible = filteredIds.has(n.id)
-        const isHighlightedNode = hasHighlight ? highlightedIds.has(Number(n.id)) : true
-        return {
-          ...n,
-          hidden: !isVisible,
-          data: {
-            ...n.data,
-            isDimmed: hasHighlight ? !isHighlightedNode : false,
-          },
-        }
-      })
-    )
+    setNodes((nds) => nds.map((n) => ({
+      ...n,
+      hidden: !filteredIds.has(n.id),
+      data: {
+        ...n.data,
+        isDimmed: hasHighlight ? !highlightedIds.has(Number(n.id)) : false,
+      },
+    })))
 
-    setEdges((eds) =>
-      eds.map((e) => {
-        const srcVisible = filteredIds.has(e.source)
-        const tgtVisible = filteredIds.has(e.target)
-        const bothHighlighted = hasHighlight
-          ? highlightedIds.has(Number(e.source)) && highlightedIds.has(Number(e.target))
-          : true
-        return {
-          ...e,
-          hidden: !srcVisible || !tgtVisible,
-          style: {
-            ...e.style,
-            opacity: hasHighlight ? (bothHighlighted ? 1 : 0.08) : 1,
-          },
-        }
-      })
-    )
+    setEdges((eds) => eds.map((e) => ({
+      ...e,
+      hidden: !filteredIds.has(e.source) || !filteredIds.has(e.target),
+      style: {
+        ...e.style,
+        opacity: hasHighlight
+          ? (highlightedIds.has(Number(e.source)) && highlightedIds.has(Number(e.target)) ? 1 : 0.08)
+          : 1,
+      },
+    })))
   }, [searchQuery, selectedTypes, highlightedIds, hasHighlight, apiNodes])
 
   const onNodeClick = useCallback((_: any, node: Node) => {
@@ -210,19 +206,6 @@ function GraphExplorerInner() {
       setHasHighlight(false)
     }
   }, [hasHighlight])
-
-  const handleTypeToggle = (type: string) => {
-    setSelectedTypes((prev) =>
-      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
-    )
-  }
-
-  const handleClearFilters = () => {
-    setSearchQuery('')
-    setSelectedTypes([])
-    setHighlightedIds(new Set())
-    setHasHighlight(false)
-  }
 
   const handleFocusNeighbors = async (nodeId: number) => {
     try {
@@ -271,33 +254,38 @@ function GraphExplorerInner() {
   }
 
   const filteredNodes = getFilteredNodes()
-
   if (loading) return <Loader fullScreen text="Loading graph..." />
 
   return (
     <div className="w-screen h-screen bg-slate-950 relative overflow-hidden">
       {/* Top bar */}
-      <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-3 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
+      <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-2.5 bg-slate-900/90 backdrop-blur-md border-b border-slate-800">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate(`/projects/${projectId}`)} className="text-slate-400 hover:text-white transition-colors">
             <ArrowLeft size={18} />
           </button>
-          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           <span className="text-white font-semibold text-sm">{projectName}</span>
           <span className="text-slate-500 text-xs hidden sm:block">Graph Explorer</span>
+          <WSIndicator isConnected={isConnected} connections={connections} />
         </div>
         <div className="flex items-center gap-2">
           {hasHighlight && (
-            <button onClick={handleClearFilters} className="text-xs text-indigo-400 hover:text-indigo-300 px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 transition-all">
+            <button onClick={() => { setHighlightedIds(new Set()); setHasHighlight(false) }} className="text-xs text-indigo-400 hover:text-indigo-300 px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
               Clear highlight
             </button>
           )}
-          <Button size="sm" variant="secondary" onClick={loadGraph}><RefreshCw size={13} />Refresh</Button>
-          <Button size="sm" onClick={() => navigate(`/projects/${projectId}`)}><Plus size={13} />Add Data</Button>
+          <Button size="sm" variant="secondary" onClick={() => navigate(`/projects/${projectId}/history`)}>
+            <History size={13} /> History
+          </Button>
+          <Button size="sm" variant="secondary" onClick={loadGraph}>
+            <RefreshCw size={13} /> Refresh
+          </Button>
+          <Button size="sm" onClick={() => navigate(`/projects/${projectId}`)}>
+            <Plus size={13} /> Add Data
+          </Button>
         </div>
       </div>
 
-      {/* React Flow */}
       <div className="w-full h-full pt-14">
         <ReactFlow
           nodes={nodes}
@@ -312,9 +300,7 @@ function GraphExplorerInner() {
           maxZoom={3}
           proOptions={{ hideAttribution: true }}
         >
-          {showGrid && (
-            <Background variant={BackgroundVariant.Dots} gap={28} size={1} color="#1e293b" />
-          )}
+          {showGrid && <Background variant={BackgroundVariant.Dots} gap={28} size={1} color="#1e293b" />}
           <MiniMap
             className="!bg-slate-900 !border !border-slate-700 !rounded-xl"
             nodeColor={(n) => n.data?.color || '#6366f1'}
@@ -330,8 +316,8 @@ function GraphExplorerInner() {
         selectedTypes={selectedTypes}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        onTypeToggle={handleTypeToggle}
-        onClearFilters={handleClearFilters}
+        onTypeToggle={(type) => setSelectedTypes((prev) => prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type])}
+        onClearFilters={() => { setSearchQuery(''); setSelectedTypes([]); setHighlightedIds(new Set()); setHasHighlight(false) }}
         totalNodes={apiNodes.length}
         visibleNodes={filteredNodes.length}
       />
@@ -357,10 +343,8 @@ function GraphExplorerInner() {
       {apiNodes.length === 0 && !loading && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="text-center">
-            <div className="w-16 h-16 bg-indigo-500/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <RefreshCw size={24} className="text-indigo-400" />
-            </div>
-            <p className="text-white font-medium mb-2">No nodes in this graph</p>
+            <RefreshCw size={24} className="text-indigo-400 mx-auto mb-3" />
+            <p className="text-white font-medium mb-1">No nodes in this graph</p>
             <p className="text-slate-400 text-sm">Go back and add some nodes first</p>
           </div>
         </div>
