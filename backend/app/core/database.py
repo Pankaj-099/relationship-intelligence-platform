@@ -1,20 +1,30 @@
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from app.core.config import settings
+import ssl
 
-# Convert standard postgresql:// to postgresql+asyncpg://
-DATABASE_URL = settings.DATABASE_URL.replace(
+
+raw_db_url = settings.DATABASE_URL
+
+
+DATABASE_URL = raw_db_url.replace(
     "postgresql://", "postgresql+asyncpg://"
-)
+).split("?")[0]
+
+
+ssl_context = ssl.create_default_context()
+
 
 engine = create_async_engine(
     DATABASE_URL,
+    connect_args={"ssl": ssl_context},
     echo=settings.DEBUG,
     pool_pre_ping=True,
     pool_size=10,
     max_overflow=20,
 )
 
+# Session
 AsyncSessionLocal = async_sessionmaker(
     engine,
     class_=AsyncSession,
@@ -23,11 +33,11 @@ AsyncSessionLocal = async_sessionmaker(
     autoflush=False,
 )
 
-
+# Base model
 class Base(DeclarativeBase):
     pass
 
-
+# Dependency
 async def get_db() -> AsyncSession:
     async with AsyncSessionLocal() as session:
         try:
@@ -39,7 +49,7 @@ async def get_db() -> AsyncSession:
         finally:
             await session.close()
 
-
+# Create tables
 async def create_tables():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
