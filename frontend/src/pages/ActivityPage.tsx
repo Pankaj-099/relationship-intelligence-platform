@@ -1,3 +1,4 @@
+// Activity Page
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Activity, Clock, User, GitBranch, Network, Layers } from 'lucide-react'
