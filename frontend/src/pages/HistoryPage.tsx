@@ -53,6 +53,21 @@ export const HistoryPage = () => {
     }
   }
 
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const snap = await historyApi.save(projectId, description || `Snapshot ${new Date().toLocaleString()}`)
+      setSnapshots((prev) => [snap, ...prev])
+      setShowSave(false)
+      setDescription('')
+      toast.success('Snapshot saved!')
+    } catch {
+      toast.error('Failed to save snapshot')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const handleDelete = async (snapId: number) => {
     if (!confirm('Delete this snapshot?')) return
